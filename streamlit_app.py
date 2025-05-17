@@ -1,8 +1,9 @@
 import streamlit as st
 from openai import OpenAI
 import os
+import fitz
 
-st.title("💬 Chatbot")
+st.title("💬 Chatbot z PDF")
 
 #  API key from .streamlit/secrets.toml
 api_key = st.secrets.get("OPENROUTER_API_KEY")
@@ -26,28 +27,48 @@ model = st.selectbox("Wybierz model", [
     "meta-llama/llama-3.3-8b-instruct:free",
 ])
 
-# User's message
-user_input = st.text_area("🧑‍💻 Twoje pytanie:", height=100)
+# Upload PDF
+st.markdown("---")
+st.subheader("📄 Załaduj plik PDF")
 
-# When the user clicks "Wyślij"
+uploaded_file = st.file_uploader("Wybierz plik PDF", type="pdf")
+pdf_text = ""
+
+if uploaded_file is not None:
+    with st.spinner("Wydobywanie tekstu z PDF..."):
+        try:
+            doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
+            pdf_text = "\n".join([page.get_text() for page in doc])
+            st.success("Tekst został wydobyty!")
+            st.text_area("📄 Podgląd treści PDF", pdf_text[:3000], height=200)
+        except Exception as e:
+            st.error(f"Błąd podczas odczytu PDF: {e}")
+
+# User question
+st.markdown("---")
+st.subheader("🧑‍💻 Zapytaj model na podstawie dokumentu")
+user_input = st.text_area("Twoje pytanie:", height=100)
+
 if st.button("Wyślij"):
     if not user_input.strip():
-        st.warning("Wpisz coś, zanim wyślesz!")
+        st.warning("Wpisz pytanie przed wysłaniem.")
+    elif not pdf_text:
+        st.warning("Najpierw załaduj plik PDF.")
     else:
         with st.spinner("Czekam na odpowiedź..."):
             try:
                 response = client.chat.completions.create(
                     model=model,
                     messages=[
-                        {"role": "user", "content": user_input}
+                        {"role": "system", "content": "Jesteś pomocnym asystentem, który odpowiada na pytania na podstawie dostarczonego dokumentu PDF."},
+                        {"role": "user", "content": f"Oto zawartość dokumentu:\n{pdf_text[:4000]}\n\nPytanie: {user_input}"}
                     ],
                     extra_headers={
-                        "HTTP-Referer": "https://github.com/twoj-login/streamlit-llm-app",  # Opcjonalne
-                        "X-Title": "Streamlit Chatbot App",  # Opcjonalne
+                        "HTTP-Referer": "https://github.com/twoj-login/streamlit-llm-app",
+                        "X-Title": "Streamlit PDF Chatbot"
                     }
                 )
                 st.markdown("### 🤖 Odpowiedź:")
                 st.write(response.choices[0].message.content)
-
             except Exception as e:
-                st.error(f"❌ Błąd: {e}")
+                st.error(f"❌ Błąd podczas zapytania: {e}")
